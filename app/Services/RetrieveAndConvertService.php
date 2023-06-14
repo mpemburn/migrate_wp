@@ -13,8 +13,10 @@ class RetrieveAndConvertService
         'varchar'
     ];
 
-    protected $timezone;
-    protected $blogId;
+    protected string $timezone;
+    protected int $blogId;
+    protected int $minBlogId;
+    protected string $destTableName;
     protected Collection $blogTables;
     protected Collection $migrations;
     protected Collection $inserts;
@@ -29,9 +31,11 @@ class RetrieveAndConvertService
 
     public function setBlog(int $blogId, ?string $database = null): self
     {
+        !d($database);
         $this->blogId = $blogId;
         $dbName = $database ? $database : env('DB_DATABASE');
         $tables = DB::select('SHOW TABLES');
+
         collect($tables)->each(function ($table) use ($blogId, $dbName) {
             $prop = 'Tables_in_' . $dbName;
             if (stripos($table->$prop, 'wp_' . $blogId) !== false) {
@@ -43,12 +47,33 @@ class RetrieveAndConvertService
         return $this;
     }
 
+    public function setMinBlogId($minBlogId): self
+    {
+        $this->minBlogId = $minBlogId + 1;
+
+        return $this;
+    }
+
+    /**
+     * @param $tableName
+     * @return string
+     */
+    public function getClassName($tableName): string
+    {
+        $camelTable = str_replace(' ', '', ucwords(str_replace('_', ' ', $tableName)));
+        $classname = sprintf("Create%sTable", $camelTable);
+
+        return $classname;
+    }
+
+    protected function getDestTableName(string $tableName): string
+    {
+        return str_replace("_{$this->blogId}_", "_{$this->minBlogId}_", $tableName);
+    }
+
     public function migrate()
     {
         $this->blogTables->each(function ($tableName) {
-            if ($tableName !== 'wp_19_posts') {
-                return;
-            }
             $this->createMigrations($tableName)
                 ->buildInsertRows($tableName);
         });
@@ -59,10 +84,12 @@ class RetrieveAndConvertService
 
     public function createMigrations($tableName): self
     {
+        $destTableName = $this->getDestTableName($tableName);
+
         $columns = DB::select("SHOW FULL COLUMNS FROM {$tableName};");
         $tableSchemaCodes = [];
 
-        collect($columns)->each(function ($column) use (&$tableSchemaCodes) {
+        collect($columns)->each(function ($column) use (&$tableSchemaCodes, $destTableName) {
             $field = $column->Field;
             $columnType = $column->Type;
             $collation = $column->Collation;
@@ -109,15 +136,7 @@ class RetrieveAndConvertService
         $tableSchemaCode = '    $table->timestamps();';
         $tableSchemaCodes[] = $tableSchemaCode;
 
-        $indexes = [];
-        $query = DB::select("SHOW INDEX FROM {$tableName};");
-        collect($query)->each(function ($index) use (&$indexes) {
-            if ($index->Key_name === 'PRIMARY') {
-                return;
-            }
-            $indexes[$index->Key_name]['is_unique'] = $index->Non_unique === 0;
-            $indexes[$index->Key_name]['keys'][] = $index->Column_name;
-        });
+        $indexes = $this->getIndexes($tableName);
 
         if (!empty($indexes)) {
             foreach ($indexes as $indexName => $index) {
@@ -125,12 +144,11 @@ class RetrieveAndConvertService
             }
         }
 
-        $camelTable = str_replace(' ', '', ucwords(str_replace('_', ' ', $tableName)));
-        $classname = sprintf("Create%sTable", $camelTable);
+        $classname = $this->getClassName($destTableName);
 
         $tableSchemaCodes = implode("\n        ", $tableSchemaCodes);
 
-        $migration = $this->getMigrationStub($classname, $tableName, $tableSchemaCodes);
+        $migration = $this->getMigrationStub($classname, $destTableName, $tableSchemaCodes);
 
         $this->migrations->push([$this->blogId => $migration]);
 
@@ -140,6 +158,22 @@ class RetrieveAndConvertService
     protected function getFieldTypeParts(string $fieldType): FieldType
     {
         return (new FieldType())->set($fieldType);
+    }
+
+    public function getIndexes($tableName): array
+    {
+        $indexes = [];
+
+        $query = DB::select("SHOW INDEX FROM {$tableName};");
+        collect($query)->each(function ($index) use (&$indexes) {
+            if ($index->Key_name === 'PRIMARY') {
+                return;
+            }
+            $indexes[$index->Key_name]['is_unique'] = $index->Non_unique === 0;
+            $indexes[$index->Key_name]['keys'][] = $index->Column_name;
+        });
+
+        return $indexes;
     }
 
     protected function getMigrationStub(string $classname, string $tableName, string $schemaCodes): string
@@ -185,16 +219,18 @@ class {$classname} extends Migration
 
         $rows = $model->get()->toArray();
 
-        collect($rows)->each(function ($row) use ($tableName, $insertStub) {
+        $destTableName = $this->getDestTableName($tableName);
+
+        collect($rows)->each(function ($row) use ($destTableName, $insertStub) {
             if (!$insertStub) {
                 $columns = implode(',', array_keys($row));
                 $qs = implode(',', array_fill(0, count(array_keys($row)), '?'));
 
-                $insertStub = "INSERT INTO {$tableName} ({$columns}) VALUES($qs);";
+                $insertStub = "INSERT INTO {$destTableName} ({$columns}) VALUES($qs);";
             }
             // Save insert data
             $this->inserts->push([$this->blogId => [
-                'table' => $tableName,
+                'table' => $destTableName,
                 'insert' => $insertStub,
                 'values' => array_values($row)
                 ]
@@ -205,5 +241,6 @@ class {$classname} extends Migration
 
         return $this;
     }
+
 
 }
