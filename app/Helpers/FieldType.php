@@ -6,19 +6,23 @@ class FieldType
 {
     const NAME_MAPPINGS = [
         'tinyint' => 'tinyInteger',
+        'bigint' => 'bigInteger',
         'int' => 'integer',
         'varchar' => 'string'
     ];
 
 
-    public string $name;
-    public array $params;
-    public ?string $setting;
+    public string $name = '';
+    public array $params = [];
+    public ?string $setting = null;
 
-    public function set(string $fieldType): self
+    public function set(string $fieldType, string $fieldName): self
     {
         $filterFieldTypeParams = [
             'tinyInteger' => function ($x) {
+                return [];
+            },
+            'bigInteger' => function ($x) {
                 return [];
             },
             'integer' => function ($x) {
@@ -33,6 +37,7 @@ class FieldType
 
         $this->setting = current($fieldTypeSplit);
 
+
         $fieldTypeSettingsSplit = explode('(', $this->setting);
 
         $fieldTypeName = $fieldTypeSettingsSplit[0];
@@ -46,11 +51,15 @@ class FieldType
             ? explode(',', $fieldTypeParamsString)
             : [];
 
+
         $this->params = array_key_exists($fieldTypeName, $filterFieldTypeParams)
             ? $filterFieldTypeParams[$fieldTypeName]($fieldTypeParams)
             : $fieldTypeParams;
 
         $this->name = $fieldTypeName;
+        if (stripos($this->setting, 'enum') !== false) {
+            !d($fieldType);
+        }
 
         return $this;
     }
