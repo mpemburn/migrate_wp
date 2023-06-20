@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\DatabaseService;
+use App\Services\MigrateTablesService;
 use App\Services\RetrieveAndConvertService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,11 @@ use Illuminate\Database\Schema\Blueprint;
 Route::get('/', function () {
     return view('welcome');
 });
+Route::get('urk', function () {
+
+
+});
+
 Route::get('derp', function () {
     class FieldType
     {
@@ -122,7 +128,7 @@ Route::get('dev', function () {
 
     DatabaseService::setDb($sourceDb);
 
-    $service = new RetrieveAndConvertService();
+    $service = new MigrateTablesService();
 
     $service->setBlogToMigrate(101)
         ->setSourceDatabase('wordpress_clarku')

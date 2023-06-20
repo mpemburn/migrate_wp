@@ -174,9 +174,17 @@ class RetrieveAndConvertService
 
         $indexes = $this->getIndexes($tableName);
 
+
         if (!empty($indexes)) {
             foreach ($indexes as $indexName => $index) {
-                $tableSchemaCodes[] = '    $table->' . ($index['is_unique'] ? 'unique' : 'index') . '(["' . implode('", "', $index['keys']) . '"]);';
+
+                $indexParams = count($index['keys']) > 1
+                    ? '[' . implode(', ', $index['keys']) . ']'
+                    : current($index['keys']);
+
+                $indexMethod = '    $table->' . ($index['is_unique'] ? 'unique' : 'index') . '(' . $indexParams . ');';
+                $tableSchemaCodes[] = $indexMethod;
+//                !d($tableName, $indexMethod, $index['keys']);
             }
         }
 
@@ -208,17 +216,37 @@ class RetrieveAndConvertService
         $indexes = [];
 
         $query = DB::select("SHOW INDEX FROM {$tableName};");
-        collect($query)->each(function ($index) use (&$indexes) {
+//        !d($query);
+        $createStatement = DB::select("SHOW CREATE TABLE {$tableName};");
+//        !d($createStatement);
+        collect($query)->each(function ($index) use (&$indexes, $createStatement) {
+//            !d($index->Column_name);
             if ($index->Key_name === 'PRIMARY') {
                 return;
             }
+            $prop = "Create Table";
+            $indexColumn = $this->isStringType($index->Column_name, current($createStatement)->$prop)
+                ? 'DB::raw(\'' . $index->Column_name . '(100)\')'
+                : "'" . $index->Column_name . "'";
             $indexes[$index->Key_name]['is_unique'] = $index->Non_unique === 0;
-            $indexes[$index->Key_name]['keys'][] = $index->Column_name;
+            $indexes[$index->Key_name]['keys'][] = $indexColumn;
         });
 
         return $indexes;
     }
 
+    protected function isStringType(string $columnName, string $createStatement)
+    {
+        $isString = false;
+
+        collect(explode("\n", $createStatement))->each(function ($line) use ($columnName, &$isString) {
+            if (! $isString && stripos($line, $columnName) !== false) {
+                $isString = stripos($line, 'varchar') !== false;
+            }
+        });
+
+        return $isString;
+    }
     protected function getMigrationFilename($tableName): string
     {
         return sprintf("%s_create_%s_table.php", $this->datetimePrefix, $tableName);
