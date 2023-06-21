@@ -85,7 +85,7 @@ class MigrateTablesService
 
         collect($tables)->each(function ($table) use ($dbName) {
             $prop = 'Tables_in_' . $dbName;
-            if (stripos($table->$prop, 'wp_' . $this->sourceBlogId) !== false) {
+            if (stripos($table->$prop, $this->prefix . $this->sourceBlogId) !== false) {
                 // Add table names to collection
                 $this->blogTables->push($table->$prop);
             }
@@ -101,11 +101,14 @@ class MigrateTablesService
                 ->buildInsertRows($tableName);
         });
 
-//        !d($this->createTableStatements);
-//        !d($this->dropTableStatements);
-//        $this->dropTables();
+        // Drop all tables that match the destination ID
+        // as well as the wp_blogs entry
+        $this->dropTables()
+            ->removeBlogsTableEntry();
+
         $this->createTables()
-            ->insertData();
+            ->insertData()
+            ->insertBlogRecord();
 
     }
 
@@ -133,15 +136,28 @@ class MigrateTablesService
         return $this;
     }
 
-    protected function insertData()
+    protected function removeBlogsTableEntry(): self
     {
+        $this->switchToDatabase($this->destDatabase);
+
+        $blogsTable = $this->prefix . '_blogs';
+
+        DB::statement("DELETE FROM {$blogsTable} WHERE blog_id = {$this->destBlogId}");
+
+        return $this;
+    }
+
+    protected function insertData(): self
+    {
+        // Set sql_mode to prevent error when inserting a record with a "zero" date
         DB::statement("SET sql_mode='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'");
+
+        // Execute prepared statements
         $this->inserts->each(function ($item) {
-//            !d($item['insert']);
-//            !d($item['values']);
             DB::insert($item['insert'], $item['values']);
         });
 
+        return $this;
     }
 
     protected function buildCreateStatements(string $tableName): self
@@ -189,9 +205,7 @@ class MigrateTablesService
             if (!$insertStub) {
                 $insertStub = $this->buildInsertStatement($row, $destTableName);
             }
-//            if ($destTableName === 'wp_25_links') {
-//                dd(array_values($row));
-//            }
+
             // Save insert data
             $this->inserts->push([
                 'table' => $destTableName,
@@ -201,6 +215,29 @@ class MigrateTablesService
         });
 
         return $this;
+    }
+
+    protected function insertBlogRecord(): void
+    {
+        $this->switchToDatabase($this->sourceDatabase);
+
+        $tableName = $this->prefix . 'blogs';
+        $model = new DynamicModel();
+        $model->setTable($tableName);
+
+        $blogRecord = $model->where('blog_id', $this->sourceBlogId)->first();
+        $blogRecord->blog_id = $this->destBlogId;
+        $blogRecord->domain = $this->destBlogUrl;
+
+        $record = $blogRecord->toArray();
+        $values = array_values($record);
+
+        $insertStub = $this->buildInsertStatement($record, $tableName);
+
+        $this->switchToDatabase($this->destDatabase);
+        DB::insert($insertStub, $values);
+
+        echo $this->sourceBlogId . ' Done!' . PHP_EOL;
     }
 
     protected function buildInsertStatement($data, string $tableName): string

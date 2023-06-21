@@ -3,11 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Services\DatabaseService;
-use App\Services\RetrieveAndConvertService;
+use App\Services\MigrateTablesService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
-class RetrieveAndConvertSchema extends Command
+class MigrateBlogTables extends Command
 {
     protected $signature = 'schema:migrate';
 
@@ -25,7 +25,7 @@ class RetrieveAndConvertSchema extends Command
 
         DatabaseService::setDb($sourceDb);
 
-        $service = new RetrieveAndConvertService();
+        $service = new MigrateTablesService();
 
         $service->setBlogToMigrate($blogId)
             ->setSourceDatabase('wordpress_clarku')
