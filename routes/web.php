@@ -118,22 +118,4 @@ Route::get('derp', function () {
 
 
 Route::get('dev', function () {
-    $sourceDb = 'wordpress_clarku';
-    $destDb = 'sites_clarku';
-
-    DatabaseService::setDb($destDb);
-    $blogs = DB::select('SELECT domain, MAX(blog_id) AS max FROM wp_blogs GROUP BY domain');
-    $destBlogId = current($blogs)->max;
-    $destBlogUrl = current($blogs)->domain;
-
-    DatabaseService::setDb($sourceDb);
-
-    $service = new MigrateTablesService();
-
-    $service->setBlogToMigrate(101)
-        ->setSourceDatabase('wordpress_clarku')
-        ->setDestDatabase('sites_clarku')
-        ->setDestBlogId($destBlogId)
-        ->setDestBlogUrl($destBlogUrl)
-        ->run();
 });

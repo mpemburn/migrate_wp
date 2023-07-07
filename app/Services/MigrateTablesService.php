@@ -58,35 +58,18 @@ class MigrateTablesService
         DatabaseService::setDb($databaseName);
     }
 
-    public function setDestBlogId($destBlogId): self
-    {
-        $this->destBlogId = $destBlogId + 1;
-
-        return $this;
-    }
-
-    public function setDestBlogUrl($destBlogUrl): self
-    {
-        $this->destBlogUrl = $destBlogUrl;
-
-        return $this;
-    }
-
-    protected function getDestTableName(string $tableName): string
-    {
-        return str_replace("_{$this->sourceBlogId}_", "_{$this->destBlogId}_", $tableName);
-    }
-
     public function run(): void
     {
+        $this->setDestBlogInfo();
         $this->switchToDatabase($this->sourceDatabase);
         $dbName = $this->sourceDatabase;
         $tables = DB::select('SHOW TABLES');
 
         collect($tables)->each(function ($table) use ($dbName) {
             $prop = 'Tables_in_' . $dbName;
-            if (stripos($table->$prop, $this->prefix . $this->sourceBlogId) !== false) {
+            if (stripos($table->$prop, $this->prefix . $this->sourceBlogId . '_') !== false) {
                 // Add table names to collection
+//                echo $table->$prop . PHP_EOL;
                 $this->blogTables->push($table->$prop);
             }
         });
@@ -110,6 +93,21 @@ class MigrateTablesService
             ->insertData()
             ->insertBlogRecord();
 
+    }
+
+    protected function setDestBlogInfo()
+    {
+        $this->switchToDatabase($this->destDatabase);
+
+        // Get the current highest blog ID from the destination
+        $blogs = DB::select('SELECT domain, MAX(blog_id) AS max FROM wp_blogs GROUP BY domain');
+        $this->destBlogId = (int) current($blogs)->max + 1;
+        $this->destBlogUrl = current($blogs)->domain;
+    }
+
+    protected function getDestTableName(string $tableName): string
+    {
+        return str_replace("_{$this->sourceBlogId}_", "_{$this->destBlogId}_", $tableName);
     }
 
     protected function createTables(): self
@@ -140,7 +138,7 @@ class MigrateTablesService
     {
         $this->switchToDatabase($this->destDatabase);
 
-        $blogsTable = $this->prefix . '_blogs';
+        $blogsTable = $this->prefix . 'blogs';
 
         DB::statement("DELETE FROM {$blogsTable} WHERE blog_id = {$this->destBlogId}");
 

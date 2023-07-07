@@ -9,31 +9,18 @@ use Illuminate\Support\Facades\DB;
 
 class MigrateBlogTables extends Command
 {
-    protected $signature = 'schema:migrate';
+    protected $signature = 'schema:migrate {--blog_id=} {--source=} {--dest=}';
 
-    public function handle()
+    public function handle(MigrateTablesService $service)
     {
-        $blogId = 432;
-
-        $sourceDb = 'wordpress_clarku';
-        $destDb = 'sites_clarku';
-
-        DatabaseService::setDb($destDb);
-        $blogs = DB::select('SELECT domain, MAX(blog_id) AS max FROM wp_blogs GROUP BY domain');
-        $destBlogId = current($blogs)->max;
-        $destBlogUrl = current($blogs)->domain;
-
-        DatabaseService::setDb($sourceDb);
-
-        $service = new MigrateTablesService();
+        $blogId = $this->option('blog_id');
+        $sourceDb = $this->option('source'); //'wordpress_clarku';
+        $destDb = $this->option('dest'); //'sites_clarku';
 
         $service->setBlogToMigrate($blogId)
-            ->setSourceDatabase('wordpress_clarku')
-            ->setDestDatabase('sites_clarku')
-            ->setDestBlogId($destBlogId)
-            ->setDestBlogUrl($destBlogUrl)
+            ->setSourceDatabase($sourceDb)
+            ->setDestDatabase($destDb)
             ->run();
-
 
         return Command::SUCCESS;
     }
